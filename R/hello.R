@@ -1,12 +1,21 @@
 ### data without random error
 data <- irreg.fd(mu=1,X=kl.process(distribution = 'LAPLACE'),n=100,m=10, sig=0)
 
+alpha <- 0.95
 ### bandwidth choice
 totalt <- unlist(data$t)
 
 hcv <- bw.bcv(totalt)
 # hcv <- 0.1
 
+
+######
+mean1 <- function(x){1}
+
+mean2 <- function(x){-0.5}
+
+mean3 <- function(x){1}
+#####
 ### generate different Yp and add random error
 random <- function(data) {
   yu <- rnorm(length(unlist(data)), 0, 0.01)
@@ -60,7 +69,7 @@ SRi <- function(data, t , h ){
 
 
 locallineart <- function(data, t, h ) {
-  totalsr <- sapply(tdata, SRi, t = t , h= h)
+  totalsr <- sapply(data, SRi, t = t , h= h)
   sr <- rowMeans(totalsr)
 
   s0 <- sr[1]
@@ -111,43 +120,89 @@ locallinear <- function(data , t_est , h ) {
 
 hat <- locallinear(t_est, data= tdata, h=hcv)
 
-plot(hat[3,])
+
 ### multiplier bootstrap
-center <- function(data){
-  data[,-1] <- data[,-1] - t(locallinear(data[,1], data =tdata, h=hcv))
+center <- function(data, totaldata, h){
+  a <- data[,-1] - t(locallinear(data[,1], data =totaldata, h=h))
+  data[,-1] <- a
   return(data)
 }
 
-tdata[[3]]
-tdata[[3]][,-1]- t(locallinear(tdata[[3]][,1], data =tdata, h=hcv))
 
-centerdata <- lapply(tdata,center)
+centerdata <- lapply(tdata,center, totaldata=tdata, h=hcv)
 
-centerest <- locallinear(t_est, data= centerdata, h=hcv)
+centerest <- locallinear(centerdata, t_est= t_est, h=hcv)
 
-centerest[3,]
+### gauss mulitplier data
 gauss <- function(data){
   a <- rnorm(1)
   data[,-1] <-  a * data[,-1]
   data <- cbind(data,replicate(length(data[,1]),a))
   return(data)
 }
-
-gaussdata <- lapply(centerdata,gauss)
+gaussrm <- function(data){
+  data <- data[,-length(data[1,])]
+  return(data)
+}
 
 gaussvr <- function(data){
   g <- data[,length(data[1,])][1]
   return(g)
 }
 
-gausssamples <- sapply(gaussdata, gaussvr)
-
-gaussrm <- function(data){
-  data <- data[,-length(data[1,])]
-  return(data)
+standardize <- function(data,sd){
+  data / sd
 }
 
-gaussdata <- lapply(gaussdata, gaussrm)
+##
+n <- length(tdata)
 
-sqrt(n) * locallinear(t_est, data= gaussdata, h=hcv) - n^(-1/2) * sum(gausssamples)
+bstime <- 1000
+
+bsdata <- list()
+
+for(i in 1:bstime){
+  gaussdata <- lapply(centerdata,gauss)
+
+  gausssamples <- sapply(gaussdata, gaussvr)
+
+  gaussdata <- lapply(gaussdata, gaussrm)
+
+  bsdata[[i]] <- sqrt(n) * locallinear(t_est, data= gaussdata, h=hcv) - n^(-1/2) * sum(gausssamples) * centerest
+}
+
+### bootstrap end
+
+ex2 <- 0
+ex <- 0
+for(i in 1:bstime){
+  ex2 <- ex2 + bsdata[[i]]^2/n
+  ex <- ex + bsdata[[i]]/n
+}
+
+sdt <- sqrt( ex2 -ex^2)
+
+stdata <- lapply(bsdata, standardize, sd= sdt)
+
+supdata <- sapply(stdata, function(x){max(abs(x))})
+
+hatqalpha <- quantile(supdata, alpha)
+
+scbup <- hat + hatqalpha * sdt / sqrt(n)
+scblow <- hat - hatqalpha * sdt / sqrt(n)
+
+truef <- function(x){
+  a <- mean1(x)
+  b <- mean2(x)
+  c <- mean3(x)
+  return(c(a,b,c))
+}
+
+true <- sapply(t_est, truef)
+
+if(mean((scbup >= true) * (true >= scblow)) < 1){
+  cover <- 0
+}else {
+  cover <- 1
+}
 

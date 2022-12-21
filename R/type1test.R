@@ -1,11 +1,10 @@
 library(foreach)
 library(doParallel)
 
-cn <- detectCores()/2
-registerDoParallel(cn)
-foreach (rp=1:40, .combine=c) %dopar% {
+registerDoParallel(detectCores()-1)
+foreach (rp=1:45, .combine=c) %dopar% {
   ### data without random error
-  data <- irreg.fd(mu=1,X=kl.process(distribution = 'LAPLACE'),n=100,m=10, sig=0)
+  data <- irreg.fd(mu=1,X=kl.process(distribution = 'LAPLACE'),n=150,m=5, sig=0)
 
   alpha <- 0.95
   ### bandwidth choice
@@ -24,7 +23,7 @@ foreach (rp=1:40, .combine=c) %dopar% {
   #####
   ### generate different Yp and add random error
   random <- function(data) {
-    yu <- rnorm(length(unlist(data)), 0, 0.01)
+    yu <- rnorm(length(unlist(data)), 0, 0.1)
     return(yu)
   }
 
@@ -60,7 +59,6 @@ foreach (rp=1:40, .combine=c) %dopar% {
   t_est <- seq(0,1,length.out=21)
 
   ### local linear estimator
-
   SRi <- function(data, t , h ){
     tij <- data[,1]
     s0ij <- (1/length(tij)) * EpaK((tij-t)/h)/h
@@ -70,6 +68,8 @@ foreach (rp=1:40, .combine=c) %dopar% {
     s1repeat <- replicate(3,s1ij)
     r0ij <- s0repeat * data[,-1]
     r1ij <- s1repeat * data[,-1]
+    r0ij <- matrix(r0ij, nrow = length(data[,1]))
+    r1ij <- matrix(r1ij, nrow = length(data[,1]))
     return(c(sum(s0ij),sum(s1ij),sum(s2ij),colSums(r0ij),colSums(r1ij)))
   }
 
@@ -146,8 +146,9 @@ foreach (rp=1:40, .combine=c) %dopar% {
     data <- cbind(data,replicate(length(data[,1]),a))
     return(data)
   }
+
   gaussrm <- function(data){
-    data <- data[,-length(data[1,])]
+    data <- matrix(data[,-length(data[1,])], length(data[,1]))
     return(data)
   }
 
@@ -163,7 +164,7 @@ foreach (rp=1:40, .combine=c) %dopar% {
   ##
   n <- length(tdata)
 
-  bstime <- 1000
+  bstime <- 500
 
   bsdata <- list()
 
@@ -215,3 +216,5 @@ foreach (rp=1:40, .combine=c) %dopar% {
 }
 
 stopImplicitCluster()
+
+

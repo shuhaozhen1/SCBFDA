@@ -4,7 +4,7 @@ library(doParallel)
 registerDoParallel(detectCores()-1)
 foreach (rp=1:45, .combine=c) %dopar% {
   ### data without random error
-  data <- irreg.fd(mu=1,X=kl.process(distribution = 'LAPLACE'),n=150,m=5, sig=0)
+  data <- irreg.fd(mu=1,X=kl.process(distribution = 'LAPLACE'),n=50,m=5, sig=0)
 
   alpha <- 0.95
   ### bandwidth choice
@@ -22,6 +22,7 @@ foreach (rp=1:45, .combine=c) %dopar% {
   mean3 <- function(x){1}
   #####
   ### generate different Yp and add random error
+
   random <- function(data) {
     yu <- rnorm(length(unlist(data)), 0, 0.1)
     return(yu)

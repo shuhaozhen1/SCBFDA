@@ -64,7 +64,7 @@ tdata <- do.call(rbind, ty)
 
 ### localpoly
 
-localp <- function(data,t,d=1,h){
+localpt <- function(data,t,d=1,h){
   Tnmt <- sapply(0:d, function(data,t,d){
     (data[,1]-t)^d
   }, data=tdata,t=t)
@@ -76,6 +76,13 @@ localp <- function(data,t,d=1,h){
   return(muhat)
 }
 
-localp(tdata,t=0.1,h=0.1)
+
+
+localp <- function(data, t, d=1, h){
+  hat <- sapply(t,localpt,data=data,d=d, h=h)
+  return(hat)
+}
+
+localp(t=seq(0,1,length.out=11), data=tdata, h=0.1)
 
 

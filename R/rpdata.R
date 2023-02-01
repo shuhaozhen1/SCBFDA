@@ -17,7 +17,7 @@ EpaK <- function(x){
   return(y)
 }
 ###
-tpoints <- seq(0,1,length.out=21)
+tpoints <- seq(0,1,length.out=31)
 
 mean1 <- function(x){
   sin(pi*x)
@@ -73,11 +73,11 @@ rpatx <- function(x , tvar = 1 , k=100, distribution='gaussian'){
 
 
 ## data generation for one trajectory
-datafori <- function(m,p = 5,sigma=0.1, mean){
+datafori <- function(m,p,sigma=0.1, mean, distribution='gaussian'){
   mcandidate <- (m-2):(m+2)
   mi <- sample(mcandidate,1, replace = T)
   tpoints <- sort(runif(mi))
-  rawx <- matrix(replicate(n=p, rpatx(tpoints)), nrow = mi)
+  rawx <- matrix(replicate(n=p, rpatx(tpoints,distribution = distribution)), nrow = mi)
 
   ### Transfer matrix
   transfermatrix <- matrix(0,p,p)
@@ -95,8 +95,8 @@ datafori <- function(m,p = 5,sigma=0.1, mean){
   return(cbind(tpoints,t(y),rep.int(mi,mi)))
 }
 
-dataforn <- function(n,m,p=5,mean,sigma=0.1) {
-  tdata <- replicate(n,datafori(m=m,p=p,mean=mean,sigma=sigma))
+dataforn <- function(n,m,p=5,mean,sigma=0.1, distribution='gaussian') {
+  tdata <- replicate(n,datafori(m=m,p=p,mean=mean,sigma=sigma,distribution=distribution))
   return(tdata)
 }
 
@@ -127,35 +127,44 @@ localp <- function(data, t, d=1, h){
 }
 
 ### get centered data
-center <- function(data,totaldata,h){
-  p <- ncol(data)-2
-  est <- localp(t=data[,1], data=totaldata, h=h)
-  data[,2:(p+1)] <- data[,2:(p+1)] - t(est)
-  return(data)
-}
+# center <- function(data,totaldata,h){
+#   p <- ncol(data)-2
+#   est <- localp(t=data[,1], data=totaldata, h=h)
+#   data[,2:(p+1)] <- data[,2:(p+1)] - t(est)
+#   return(data)
+# }
+#
+#
+# ### individual smoothing
+# ismootht <- function(t,data,h){
+#   p <- ncol(data)-2
+#   Wmt <- EpaK((data[,1]-t)/h) / h / data[,p+2]
+#   hatit <- matrix(Wmt * data[,2:(p+1)], ncol= p)
+#   hatit <- colSums(hatit)
+#   return(hatit)
+# }
+#
+#
+# ismooth <- function(tpoints,data,h){
+#   totalsmooth <- sapply(tpoints,ismootht,data,h=h)
+#   return(totalsmooth)
+# }
+
+# gaussbs <- function(data){
+#   bsdata <- lapply(data,function(x){
+#     rnorm(1)*x
+#   })
+#   bs <- Reduce('+',bsdata)/sqrt(n)
+#   return(bs)
+# }
 
 
-### individual smoothing
-ismootht <- function(t,data,h){
-  p <- ncol(data)-2
-  Wmt <- EpaK((data[,1]-t)/h) / h / data[,p+2]
-  hatit <- matrix(Wmt * data[,2:(p+1)], ncol= p)
-  hatit <- colSums(hatit)
-  return(hatit)
-}
 
-
-ismooth <- function(tpoints,data,h){
-  totalsmooth <- sapply(tpoints,ismootht,data,h=h)
-  return(totalsmooth)
-}
-
-gaussbs <- function(data){
-  bsdata <- lapply(data,function(x){
-    rnorm(1)*x
-  })
-  bs <- Reduce('+',bsdata)/sqrt(n)
-  return(bs)
+gaussbs <- function(data,mis,p,t,h){
+  rawdata <- data
+  rawdata[,2:(p+1)] <-  rep(rnorm(length(mis)), mis) * data[,2:(p+1)]
+  gshat <- localp(rawdata,t=t, h=h)
+  return(sqrt(length(mis))*gshat)
 }
 
 
@@ -168,12 +177,20 @@ n <- 100
 m <- 5
 sigma <- 0.1
 
-registerDoParallel(detectCores()-4)
+registerDoParallel(detectCores())
 
-results <- foreach (rp=1:100, .combine=cbind, .errorhandling = 'remove') %dopar% {
+results <- foreach (rp=1:50, .combine=cbind, .errorhandling = 'remove') %dopar% {
   ty <- dataforn(n,m,mean=meanlist,sigma = sigma)
+
+  mis <- sapply(ty, nrow)
+
   matrixformty <- do.call(rbind,ty)
   p <- ncol(matrixformty)-2
+
+  tdata <- matrixformty[,1]
+  mdata <- matrixformty[,p+2]
+
+
 
   hcv1 <-1.2 * bw.bcv(matrixformty[,1])
 
@@ -181,32 +198,24 @@ results <- foreach (rp=1:100, .combine=cbind, .errorhandling = 'remove') %dopar%
 
   muhat <- localp(matrixformty, t = tpoints, h=hcv1)
 
+  hatij <- localp(matrixformty, t = matrixformty[,1], h=hcv1)
 
-  centerdata <- lapply(ty, center, totaldata=matrixformty, h=hcv1)
+  centerdatay <- matrixformty[,2:(p+1)] - t(hatij)
+  centerdata <- cbind(tdata,centerdatay,mdata)
 
-  idsmootheddata <- lapply(centerdata,ismooth,tpoints=tpoints,h=hcv)
+  gs <- replicate(400,gaussbs(centerdata, mis=mis, p=p, t= tpoints, h=hcv),simplify = F)
 
-  pt <- density(matrixformty[,1], from = 0, to =1, n=21, bw=hcv)$y
+  sdest <- sqrt(Reduce('+',lapply(gs, function(x){x^2}))/n)
 
-  idatapt <- lapply(idsmootheddata, function(x){
-    t(t(x)/pt)
-  })
+  gssd <- lapply(gs, function(x,sd){x/sd},sd=sdest)
 
-  sdest <- sqrt(Reduce('+',lapply(idatapt, function(x){x^2}))/n)
-
-  adpidsmootheddata <- lapply(idatapt, function(x){
-    t(t(x)/ t(sdest))
-  })
-
-  gaussdata <- replicate(2000, gaussbs(adpidsmootheddata) , simplify = F)
-
-  supdata <- sapply(gaussdata, function(x){
+  supdata <- sapply(gssd, function(x){
     max(abs(x))
   })
 
   qhat <- quantile(supdata,0.95)
 
-  bandup <- muhat + qhat* sdest/sqrt(n)
+  bandup <- muhat + qhat * sdest/sqrt(n)
   bandlow <- muhat - qhat* sdest/sqrt(n)
 
   type1 <- 1 - floor(mean((bandup >= truemean & bandlow <= truemean)))
